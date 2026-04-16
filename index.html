@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>LifeTrack</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Iconos para PWA en iOS y Android -->
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="manifest" href="manifest.json">
+  
+  <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js');
+    }
+  </script>
+
+  <div id="login-screen">
+    <div class="login-logo">Life<span>Track</span></div>
+    
+    <div class="login-input-group">
+      <input type="text" id="login-user" placeholder="Tu Usuario" autocomplete="off">
+    </div>
+    
+    <div class="login-sub" style="line-height:1.4">Pon tu PIN de acceso<br><span style="opacity:0.6;font-size:8px;">(Si es perfil nuevo, inventa uno para registrarte)</span></div>
+    <div class="pin-dots">
+      <div class="pin-dot" id="dot-0"></div>
+      <div class="pin-dot" id="dot-1"></div>
+      <div class="pin-dot" id="dot-2"></div>
+      <div class="pin-dot" id="dot-3"></div>
+    </div>
+    <div class="numpad">
+      <button class="numpad-btn" onclick="pinPress('1')">1</button>
+      <button class="numpad-btn" onclick="pinPress('2')">2</button>
+      <button class="numpad-btn" onclick="pinPress('3')">3</button>
+      <button class="numpad-btn" onclick="pinPress('4')">4</button>
+      <button class="numpad-btn" onclick="pinPress('5')">5</button>
+      <button class="numpad-btn" onclick="pinPress('6')">6</button>
+      <button class="numpad-btn" onclick="pinPress('7')">7</button>
+      <button class="numpad-btn" onclick="pinPress('8')">8</button>
+      <button class="numpad-btn" onclick="pinPress('9')">9</button>
+      <button class="numpad-btn empty-k"></button>
+      <button class="numpad-btn" onclick="pinPress('0')">0</button>
+      <button class="numpad-btn del" onclick="pinDel()">⌫</button>
+    </div>
+    <div class="login-err" id="login-err">PIN incorrecto</div>
+  </div>
+
+  <!-- ══ HEADER (fixed) ════════════════════ -->
+  <header id="app-header">
+    <div class="logo">Life<span>Track</span></div>
+    <div class="date-badge" id="header-date"></div>
+    <div class="streak-badge" id="streak-badge" style="font-size:12px; font-weight:700; color:var(--kcal);">🔥 0</div>
+  </header>
+
+
+
+  <!-- ══ TODAY ══════════════════════════════ -->
+  <div class="view active" id="view-today">
+
+    <!-- Rings + stats -->
+    <div class="today-top">
+      <div class="ring-wrap" style="margin-right:8px;">
+        <svg class="ring-svg" width="90" height="90" viewBox="0 0 90 90">
+          <circle class="ring-bg" cx="45" cy="45" r="39" />
+          <circle class="ring-fill ring-kcal" id="ring-kcal-fill" cx="45" cy="45" r="39" stroke-dasharray="0 246" />
+        </svg>
+        <div class="ring-center">
+          <div class="rv" id="rv-kcal" style="color:var(--kcal); font-size:16px;">0</div>
+          <div class="ru" style="font-size:9px;">kcal</div>
+        </div>
+      </div>
+      <div class="ring-wrap" style="margin-right:12px;">
+        <svg class="ring-svg" width="90" height="90" viewBox="0 0 90 90">
+          <circle class="ring-bg" cx="45" cy="45" r="39" />
+          <circle class="ring-fill ring-prot" id="ring-prot-fill" cx="45" cy="45" r="39" stroke-dasharray="0 246" />
+        </svg>
+        <div class="ring-center">
+          <div class="rv" id="rv-prot" style="color:var(--accent); font-size:16px;">0</div>
+          <div class="ru" style="font-size:9px;">prot g</div>
+        </div>
+      </div>
+      <div class="today-stats">
+        <div class="stat-row">
+          <span class="stat-label">Comidas</span>
+          <span class="stat-val" id="st-count">0</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Kcal resto</span>
+          <span class="stat-val" id="st-kcal-l">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Prot. resto</span>
+          <span class="stat-val" id="st-prot-l">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Log list -->
+    <div class="sec-title">Registros de hoy</div>
+    <div class="log-list" id="today-log-list">
+      <div class="loading"><span class="spinner"></span>Cargando...</div>
+    </div>
+
+    <!-- Mini workout calendar -->
+    <div class="mini-cal-card">
+      <div class="mini-cal-head">
+        <span class="mini-cal-title">Entrenos del mes</span>
+        <span class="mini-cal-month" id="mini-cal-month"></span>
+      </div>
+      <div class="mini-cal-week-head">
+        <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+      </div>
+      <div class="mini-cal-grid" id="mini-cal-grid"></div>
+      <div class="save-ind" id="mini-save-ind" style="margin-top:4px;"></div>
+    </div>
+
+  </div>
+
+  <!-- ══ ADD ════════════════════════════════ -->
+  <div class="view" id="view-add">
+    <div class="form-card">
+      <div class="fg">
+        <label>Fecha</label>
+        <div class="date-input-wrap">
+          <input type="date" id="form-date">
+        </div>
+      </div>
+      <div class="fg">
+        <label>Categoría</label>
+        <div class="cat-grid">
+          <button class="cat-btn sel" data-cat="Desayuno" onclick="selectCat(this)">🌅 Desayuno</button>
+          <button class="cat-btn" data-cat="Almuerzo" onclick="selectCat(this)">☀️ Almuerzo</button>
+          <button class="cat-btn" data-cat="Cena" onclick="selectCat(this)">🌙 Cena</button>
+          <button class="cat-btn" data-cat="Snack" onclick="selectCat(this)">🍎 Snack</button>
+          <button class="cat-btn" data-cat="Pre-entreno" onclick="selectCat(this)">⚡ Pre</button>
+          <button class="cat-btn" data-cat="Post-entreno" onclick="selectCat(this)">💪 Post</button>
+        </div>
+      </div>
+      <div class="fg">
+        <label>Alimento</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input type="text" id="form-food" placeholder="" autocomplete="off" style="flex:1;">
+          <button onclick="startScanner()" style="background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:8px; display:flex; align-items:center; justify-content:center; width:44px; height:44px; font-size:20px; cursor:pointer;" title="Escanear Código de Barras">📷</button>
+        </div>
+        <div id="scanner-container" style="display:none; margin-top:10px; width:100%; border-radius:10px; overflow:hidden; border:1px solid var(--border);">
+           <div id="scanner-view" style="width:100%;"></div>
+           <button class="btn-main" onclick="stopScanner()" style="margin-top:0; border-radius:0; background:#f55;">Cancelar Escáner</button>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="fg">
+          <label>Calorías (kcal)</label>
+          <input type="number" id="form-kcal" placeholder="0" min="0">
+        </div>
+        <div class="fg">
+          <label>Proteína (g)</label>
+          <input type="number" id="form-prot" placeholder="0" min="0" step="0.1">
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; margin-bottom: 20px;">
+        <button class="btn-main" id="btn-add" onclick="addEntry()" style="flex:2;">Guardar entrada</button>
+        <button class="btn-main" onclick="saveAsPreset()" style="flex:1; background:var(--surface2); color:var(--text); border:1px solid var(--border); font-size:11px; padding:10px;">+ Preset</button>
+      </div>
+    </div>
+    
+    <div class="sec-title" style="margin-top:20px; margin-bottom:12px;">Puntone Rápido (Click para añadir) <span style="font-size:7px; opacity:0.6; display:block; margin-top:2px; text-transform:none;">(Manten presionado para borrar)</span></div>
+    <div id="presets-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom:30px;">
+      <!-- Generado por javascript -->
+    </div>
+
+  </div>
+
+  <!-- ══ TRACKING ════════════════════════════ -->
+  <div class="view" id="view-tracking">
+
+    <!-- Gráfica de peso / tracking -->
+    <div class="sec-title" style="margin-bottom: 12px;">Tu peso</div>
+    <div class="peso-card" style="background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px; margin-bottom:20px;">
+       <div class="form-row" style="align-items:flex-end;">
+         <div class="fg" style="margin-bottom:0;">
+           <label style="font-size:12px; color:var(--text); letter-spacing:0.04em; margin-bottom: 8px;">Peso actual (kg)</label>
+           <input type="number" id="form-peso" step="0.1" placeholder="">
+         </div>
+         <button class="btn-main" onclick="addPeso()" style="width:auto; padding:9px 16px; margin:0;" id="btn-peso">+</button>
+       </div>
+       <div class="chart-container" style="position: relative; height:130px; width:100%; margin-top:20px;">
+          <canvas id="pesoChart"></canvas>
+       </div>
+    </div>
+
+    <div class="sec-title" style="margin-bottom: 12px;">Calendario de Entrenos</div>
+    <div class="wk-top">
+      <div class="month-nav">
+        <button class="mnav-btn" onclick="changeMonth(-1)">‹</button>
+        <div class="month-lbl" id="month-lbl"></div>
+        <button class="mnav-btn" onclick="changeMonth(1)">›</button>
+      </div>
+    </div>
+
+    <div class="wk-stats">
+      <div class="wk-stat">
+        <div class="sv" id="sv-count">0</div>
+        <div class="sl">Entrenos</div>
+      </div>
+      <div class="wk-stat">
+        <div class="sv" id="sv-week">0</div>
+        <div class="sl">Esta semana</div>
+      </div>
+      <div class="wk-stat">
+        <div class="sv" id="sv-pct">0%</div>
+        <div class="sl">Del mes</div>
+      </div>
+    </div>
+
+    <div class="wk-cal">
+      <div class="wk-cal-head">
+        <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+      </div>
+      <div class="wk-cal-grid" id="wk-cal-grid"></div>
+    </div>
+
+    <div class="wk-legend">
+      <span>
+        <div class="wl-dot" style="background:var(--accent)"></div> Entrenado
+      </span>
+      <span>
+        <div class="wl-dot" style="background:var(--surface2);border:1px solid var(--border)"></div> Sin entreno
+      </span>
+    </div>
+    <div class="save-ind" id="save-ind"></div>
+    
+    <div class="sec-title" style="margin-top:24px; margin-bottom:12px;">Tus Marcas Base (PR)</div>
+    <div class="form-card" style="padding:16px;">
+       <div class="form-row">
+         <div class="fg">
+           <label>Banca (kg)</label>
+           <input type="number" id="form-pb" placeholder="0" step="0.1">
+         </div>
+         <div class="fg">
+           <label>Sentad. (kg)</label>
+           <input type="number" id="form-s" placeholder="0" step="0.1">
+         </div>
+         <div class="fg">
+           <label>Bíceps (kg)</label>
+           <input type="number" id="form-cb" placeholder="0" step="0.1">
+         </div>
+       </div>
+       <button class="btn-main" onclick="saveMarcas()" id="btn-marcas" style="padding:10px; font-size:13px; margin-top:2px;">Guardar/Actualizar Marcas</button>
+    </div>
+
+  </div>
+
+  <!-- ══ RANKING ════════════════════════════ -->
+  <div class="view" id="view-ranking">
+    <div class="sec-title" style="margin-top:10px;">Leaderboard - Mejores Marcas</div>
+    <div class="ranking-cont" id="ranking-container">
+      <div class="loading"><span class="spinner"></span>Cargando ranking del servidor...</div>
+    </div>
+  </div>
+
+  <!-- ══ MAS ════════════════════════════ -->
+  <div class="view" id="view-more" style="padding: 20px;">
+    
+    <!-- Main Menu List -->
+    <div id="more-main">
+       <div class="sec-title" style="margin-top:0;">Mi Perfil & Ajustes</div>
+       <div class="list-menu">
+          <button class="list-item" onclick="openSubMenu('sub-tdee')">
+             <span class="li-icon">⚖️</span><span class="li-text">Calculadora TDEE</span><span class="li-arrow">›</span>
+          </button>
+          <button class="list-item" onclick="openSubMenu('sub-goals')">
+             <span class="li-icon">🎯</span><span class="li-text">Objetivos y Macros</span><span class="li-arrow">›</span>
+          </button>
+          <button class="list-item" onclick="openSubMenu('sub-theme')">
+             <span class="li-icon">🎨</span><span class="li-text">Apariencia y Tema</span><span class="li-arrow">›</span>
+          </button>
+       </div>
+
+       <div class="sec-title">Datos Guardados</div>
+       <div class="list-menu">
+          <button class="list-item" onclick="openSubMenu('sub-history')">
+             <span class="li-icon">📋</span><span class="li-text">Historial de Registros</span><span class="li-arrow">›</span>
+          </button>
+       </div>
+
+       <div class="list-menu" style="margin-top:30px;">
+          <button class="list-item" onclick="logout()" style="justify-content:center; color:#f55;">
+             <span class="li-text" style="flex:unset;">Cerrar Sesión</span>
+          </button>
+       </div>
+    </div>
+
+    <!-- ── SUB VISTAS ── -->
+    <div id="sub-tdee" class="sub-menu" style="display:none;">
+       <button class="back-btn" onclick="closeSubMenu()">← Atrás</button>
+       <div class="sec-title" style="margin-top:20px;">Auto-Calcular TDEE</div>
+       <div class="form-card" style="padding:16px;">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;">
+           <div class="cfg-row" style="margin:0;"><label>Peso (kg)</label><input type="number" id="tdee-w" value="70"></div>
+           <div class="cfg-row" style="margin:0;"><label>Alt. (cm)</label><input type="number" id="tdee-h" value="175"></div>
+           <div class="cfg-row" style="margin:0;"><label>Edad</label><input type="number" id="tdee-a" value="25"></div>
+           <div class="cfg-row" style="margin:0;"><label>Sexo</label>
+              <select id="tdee-s" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:4px; font-family:var(--font-m); outline:none;">
+                 <option value="m">Hombre</option>
+                 <option value="f">Mujer</option>
+              </select>
+           </div>
+        </div>
+        <div class="cfg-row" style="margin:0 0 16px 0;">
+           <label style="margin-bottom:4px; display:block;">Objetivo Nutricional</label>
+           <select id="tdee-obj" style="background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px; width:100%; font-family:var(--font-m); outline:none; border-radius:6px;">
+              <option value="-500">Déficit (Perder Grasa / Definir)</option>
+              <option value="0" selected>Mantenimiento</option>
+              <option value="300">Volumen (Ganar Masa Muscular)</option>
+           </select>
+        </div>
+        <button class="btn-main" onclick="calcTDEE()" style="padding:12px; font-size:14px;">Calcular Recomendado</button>
+       </div>
+    </div>
+
+    <div id="sub-goals" class="sub-menu" style="display:none;">
+       <button class="back-btn" onclick="closeSubMenu()">← Atrás</button>
+       <div class="sec-title" style="margin-top:20px;">Tus Objetivos</div>
+       <div class="form-card" style="padding:16px;">
+        <div class="cfg-row">
+          <label>Calorías objetivo</label>
+          <input type="number" id="cfg-kcal" value="2000" min="0">
+        </div>
+        <div class="cfg-row" style="margin-bottom:20px;">
+          <label>Proteína objetivo (g)</label>
+          <input type="number" id="cfg-prot" value="150" min="0">
+        </div>
+        <button class="btn-main" onclick="saveSettings()">Guardar Objetivos</button>
+       </div>
+    </div>
+
+    <div id="sub-theme" class="sub-menu" style="display:none;">
+       <button class="back-btn" onclick="closeSubMenu()">← Atrás</button>
+       
+       <div class="sec-title" style="margin-top:20px;">Tema Base</div>
+       <div class="theme-grid" id="theme-grid" style="margin-bottom:20px;">
+          <button class="theme-btn active-theme" onclick="applyThemePreset(0)">
+            <div class="theme-preview">
+              <div class="tp" style="background:#0a0a0a;border:1px solid #444"></div>
+              <div class="tp" style="background:#c8f557"></div>
+              <div class="tp" style="background:#f5a623"></div>
+            </div>
+            <div class="theme-name">Dark</div>
+          </button>
+          <button class="theme-btn" onclick="applyThemePreset(1)">
+            <div class="theme-preview">
+              <div class="tp" style="background:#050a14;border:1px solid #444"></div>
+              <div class="tp" style="background:#57c8f5"></div>
+              <div class="tp" style="background:#f5a623"></div>
+            </div>
+            <div class="theme-name">Midnight</div>
+          </button>
+          <button class="theme-btn" onclick="applyThemePreset(2)">
+            <div class="theme-preview">
+              <div class="tp" style="background:#0a0514;border:1px solid #444"></div>
+              <div class="tp" style="background:#c857f5"></div>
+              <div class="tp" style="background:#f5c857"></div>
+            </div>
+            <div class="theme-name">Purple</div>
+          </button>
+          <button class="theme-btn" onclick="applyThemePreset(3)">
+            <div class="theme-preview">
+              <div class="tp" style="background:#050f07;border:1px solid #444"></div>
+              <div class="tp" style="background:#57f587"></div>
+              <div class="tp" style="background:#f5a623"></div>
+            </div>
+            <div class="theme-name">Forest</div>
+          </button>
+       </div>
+
+       <div class="sec-title">Colores Libres</div>
+       <div class="form-card" style="padding:16px;">
+        <div class="cfg-row"><label>Fondo</label><input type="color" id="cfg-bg" value="#0a0a0a" oninput="onColorChange()"></div>
+        <div class="cfg-row"><label>Targetas</label><input type="color" id="cfg-surface" value="#141414" oninput="onColorChange()"></div>
+        <div class="cfg-row"><label>Proteína color</label><input type="color" id="cfg-accent" value="#c8f557" oninput="onColorChange()"></div>
+        <div class="cfg-row" style="margin-bottom:20px;"><label>Caloría color</label><input type="color" id="cfg-kcalc" value="#f5a623" oninput="onColorChange()"></div>
+        <button class="btn-main" onclick="saveSettings()">Guardar Tema</button>
+       </div>
+    </div>
+
+    <div id="sub-history" class="sub-menu" style="display:none;">
+       <button class="back-btn" onclick="closeSubMenu()">← Atrás</button>
+       <div class="sec-title" style="margin-top:20px;">Historial de registros</div>
+       <div id="history-container">
+          <div class="loading"><span class="spinner"></span>Cargando...</div>
+       </div>
+    </div>
+
+  </div>
+
+  <!-- ══ NAV (fixed bottom) ═══════════════════════ -->
+  <nav>
+    <button class="active" onclick="showView('today')">Hoy</button>
+    <button onclick="showView('add')">+ Añadir</button>
+    <button onclick="showView('tracking')">Track</button>
+    <button onclick="showView('ranking')">Social</button>
+    <button onclick="showView('more')">Más</button>
+  </nav>
+
+  <!-- ══ TOAST ══════════════════════════════ -->
+  <div class="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>
