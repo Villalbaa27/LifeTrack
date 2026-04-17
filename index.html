@@ -66,6 +66,9 @@
 
 
 
+  <!-- ══ VIEWS CONTAINER (carril horizontal de páginas) ══ -->
+  <div id="views-container"><div id="views-track">
+
   <!-- ══ TODAY ══════════════════════════════ -->
   <div class="view active" id="view-today">
 
@@ -405,6 +408,9 @@
 
   </div>
 
+  </div><!-- /views-track -->
+  </div><!-- /views-container -->
+
   <!-- ══ NAV (fixed bottom) ═══════════════════════ -->
   <nav>
     <button class="active" onclick="showView('today')">Hoy</button>
@@ -413,6 +419,15 @@
     <button onclick="showView('ranking')">Social</button>
     <button onclick="showView('more')">Más</button>
   </nav>
+
+  <!-- ══ PAGE DOTS (indicador de página) ══ -->
+  <div class="page-dots" id="page-dots">
+    <div class="page-dot active-dot"></div>
+    <div class="page-dot"></div>
+    <div class="page-dot"></div>
+    <div class="page-dot"></div>
+    <div class="page-dot"></div>
+  </div>
 
   <!-- ══ TOAST ══════════════════════════════ -->
   <div class="toast"></div>

@@ -19,6 +19,8 @@ let pinEntry = '';
 let saveTimer;
 let currentUser = '';
 let pesoChartInstance = null;
+const VIEWS = ['today', 'add', 'tracking', 'ranking', 'more'];
+let currentViewIdx = 0;
 
 // ── DATE HELPERS ──────────────────────────
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -834,13 +836,36 @@ function btnFeedback(btn, label = '✓ Hecho', durationMs = 1500) {
 }
 
 // ── NAV ───────────────────────────────────
-function showView(name) {
+function getVW() {
+  const c = document.getElementById('views-container');
+  return c ? c.offsetWidth : Math.min(window.innerWidth, 480);
+}
+
+function updatePageDots(idx) {
+  const dots = document.querySelectorAll('.page-dot');
+  dots.forEach((d, i) => d.classList.toggle('active-dot', i === idx));
+}
+
+function showView(name, animated = true) {
+  const idx = VIEWS.indexOf(name);
+  if (idx === -1) return;
+  currentViewIdx = idx;
+
+  const track = document.getElementById('views-track');
+  if (animated) {
+    track.style.transition = 'transform 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+  } else {
+    track.style.transition = 'none';
+  }
+  track.style.transform = `translateX(-${idx * getVW()}px)`;
+
+  // Marcar vista activa (solo para referencia CSS / nav)
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('view-' + name).classList.add('active');
-  const idx = ['today', 'add', 'tracking', 'ranking', 'more'].indexOf(name);
-  const navBtns = document.querySelectorAll('nav button');
-  if (navBtns[idx]) navBtns[idx].classList.add('active');
+  document.querySelectorAll('nav button').forEach((b, i) => b.classList.toggle('active', i === idx));
+  updatePageDots(idx);
+
+  // Actualizaciones de contenido por vista
   if (name === 'tracking') renderWorkoutCal();
   if (name === 'more') updateHistoryView();
   if (name === 'ranking') loadRanking();
@@ -1009,13 +1034,11 @@ function initSwipeItems() {
       const dy = Math.abs(e.touches[0].clientY - startY);
       if (Math.abs(dx) > 10 && dy < 30) {
         isDragging = true;
-        // Solo deslizamiento hacia la izquierda
         if (dx < 0) {
           const clamp = Math.max(dx, -130);
           item.style.transform = `translateX(${clamp}px)`;
           item.style.transition = 'none';
         } else if (activeSwipeItem === item) {
-          // Restaurar al deslizar derecha
           item.style.transform = 'translateX(0)';
         }
       }
@@ -1026,14 +1049,12 @@ function initSwipeItems() {
       const dx = e.changedTouches[0].clientX - startX;
       item.style.transition = 'transform 0.25s ease';
       if (dx < -SWIPE_THRESHOLD) {
-        // Abrir acciones
         if (activeSwipeItem && activeSwipeItem !== item) {
           activeSwipeItem.style.transform = 'translateX(0)';
         }
         item.style.transform = 'translateX(-130px)';
         activeSwipeItem = item;
       } else {
-        // Cerrar
         item.style.transform = 'translateX(0)';
         if (activeSwipeItem === item) activeSwipeItem = null;
       }
@@ -1049,60 +1070,119 @@ function resetSwipeItems() {
   activeSwipeItem = null;
 }
 
-// Cerrar swipe al tocar fuera
-document.addEventListener('touchstart', e => {
-  if (activeSwipeItem && !e.target.closest('.log-item-wrap')) {
-    activeSwipeItem.style.transition = 'transform 0.25s ease';
-    activeSwipeItem.style.transform = 'translateX(0)';
-    activeSwipeItem = null;
-  }
-}, { passive: true });
+// ── SWIPE DE PÁGINAS (real-time, sigue el dedo) ──
+let navStartX = 0, navStartY = 0, navStartTime = 0;
+let navIsSwiping = false, navStartOffset = 0;
 
-// ── GESTURES (SWIPE BETWEEN PAGES + BACK) ─
-const VIEWS = ['today', 'add', 'tracking', 'ranking', 'more'];
-let tStartX = 0, tStartY = 0, tStartTime = 0;
+// Obtener offset actual del track para reanudar desde posición intermedia
+function getCurrentTrackOffset() {
+  const track = document.getElementById('views-track');
+  const style = window.getComputedStyle(track);
+  const matrix = style.transform;
+  if (matrix === 'none') return 0;
+  const match = matrix.match(/matrix.*\((.+)\)/);
+  if (!match) return 0;
+  return parseFloat(match[1].split(', ')[4]) || 0;
+}
 
-document.addEventListener('touchstart', e => {
-  tStartX = e.changedTouches[0].screenX;
-  tStartY = e.changedTouches[0].screenY;
-  tStartTime = Date.now();
-}, { passive: true });
+function snapTrackToIdx(idx) {
+  const track = document.getElementById('views-track');
+  track.style.transition = 'transform 0.36s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+  track.style.transform = `translateX(-${idx * getVW()}px)`;
+}
 
-document.addEventListener('touchend', e => {
-  const diffX = e.changedTouches[0].screenX - tStartX;
-  const diffY = Math.abs(e.changedTouches[0].screenY - tStartY);
-  const elapsed = Date.now() - tStartTime;
+// Adjuntamos los handlers al views-container para que el swipe de páginas
+// solo se dispare dentro del área de vistas (no sobre nav/header)
+(function setupNavSwipe() {
+  const vc = document.getElementById('views-container');
+  if (!vc) return;
 
-  // Ignorar gestos verticales o muy lentos
-  if (diffY > Math.abs(diffX) * 0.7 || elapsed > 500) return;
-  // Requerir velocidad mínima y distancia mínima
-  if (Math.abs(diffX) < 60) return;
-  
-  // Prioridad 1: Swipe RIGHT (izquierda→derecha) → volver atrás en submenú
-  if (diffX > 0) {
-    const activado = Array.from(document.querySelectorAll('.sub-menu')).find(m => m.style.display === 'block');
-    if (activado) { closeSubMenu(); return; }
-  }
+  vc.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    navStartX = t.clientX;
+    navStartY = t.clientY;
+    navStartTime = Date.now();
+    navIsSwiping = false;
+    navStartOffset = getCurrentTrackOffset();
+    // Desactivar transición mientras se arrastra
+    document.getElementById('views-track').style.transition = 'none';
+  }, { passive: true });
 
-  // Prioridad 2: Navegación entre vistas (solo si NO hay swipe de log activo)
-  if (activeSwipeItem) return;
-  
-  // Ignorar si el swipe es sobre un log-item (para no interferir con swipe de acciones)
-  if (e.target.closest('.log-item-wrap')) return;
-  // Ignorar si se está dentro de grids de calendario (para no interferir con clicks de días)
-  if (e.target.closest('.mini-cal-grid, .wk-cal-grid')) return;
+  vc.addEventListener('touchmove', e => {
+    // No interferir con el swipe de log-items
+    if (e.target.closest('.log-item, .log-item-wrap')) return;
+    // No interferir con calendarios clickables
+    if (e.target.closest('.mini-cal-grid, .wk-cal-grid')) return;
 
-  const currentView = Array.from(document.querySelectorAll('.view')).find(v => v.classList.contains('active'));
-  if (!currentView) return;
-  const currentId = currentView.id.replace('view-', '');
-  const currentIdx = VIEWS.indexOf(currentId);
-  if (currentIdx === -1) return;
+    const t = e.touches[0];
+    const dx = t.clientX - navStartX;
+    const dy = Math.abs(t.clientY - navStartY);
 
-  if (diffX < -60 && currentIdx < VIEWS.length - 1) {
-    // Swipe izquierda → siguiente página
-    showView(VIEWS[currentIdx + 1]);
-  } else if (diffX > 60 && currentIdx > 0) {
-    // Swipe derecha → página anterior
-    showView(VIEWS[currentIdx - 1]);
-  }
-}, { passive: true });
+    if (!navIsSwiping) {
+      if (Math.abs(dx) > 8 && dy < Math.abs(dx) * 0.8) {
+        navIsSwiping = true;
+      } else {
+        return; // scroll vertical — no interferir
+      }
+    }
+
+    const vw = getVW();
+    const rawOffset = navStartOffset + dx;
+    const minOffset = -(VIEWS.length - 1) * vw;
+
+    // Resistencia tipo goma al llegar a los extremos
+    let offset = rawOffset;
+    if (rawOffset > 0)          offset = rawOffset * 0.2;
+    if (rawOffset < minOffset)  offset = minOffset + (rawOffset - minOffset) * 0.2;
+
+    document.getElementById('views-track').style.transform = `translateX(${offset}px)`;
+  }, { passive: true });
+
+  vc.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - navStartX;
+    const dy = Math.abs(e.changedTouches[0].clientY - navStartY);
+    const elapsed = Date.now() - navStartTime;
+    const velocity = elapsed > 0 ? Math.abs(dx) / elapsed : 0; // px/ms
+    const vw = getVW();
+
+    // Prioridad 1: swipe-back en submenú
+    if (dx > 50 && dy < Math.abs(dx)) {
+      const activeSub = Array.from(document.querySelectorAll('.sub-menu'))
+        .find(m => m.style.display === 'block');
+      if (activeSub) {
+        closeSubMenu();
+        snapTrackToIdx(currentViewIdx);
+        navIsSwiping = false;
+        return;
+      }
+    }
+
+    // Cerrar log-item swipe abierto
+    if (activeSwipeItem && !e.target.closest('.log-item-wrap')) {
+      activeSwipeItem.style.transition = 'transform 0.25s ease';
+      activeSwipeItem.style.transform = 'translateX(0)';
+      activeSwipeItem = null;
+    }
+
+    if (!navIsSwiping) { snapTrackToIdx(currentViewIdx); return; }
+    navIsSwiping = false;
+
+    // Umbral adaptado a la velocidad: rápido = menos distancia necesaria
+    const threshold = velocity > 0.35 ? vw * 0.12 : vw * 0.38;
+
+    if (dx < -threshold && currentViewIdx < VIEWS.length - 1) {
+      showView(VIEWS[currentViewIdx + 1]);
+    } else if (dx > threshold && currentViewIdx > 0) {
+      showView(VIEWS[currentViewIdx - 1]);
+    } else {
+      // Rebotar de vuelta con animación spríng
+      snapTrackToIdx(currentViewIdx);
+    }
+  }, { passive: true });
+})();
+
+// Recalcular posición al girar pantalla o redimensionar
+window.addEventListener('resize', () => {
+  showView(VIEWS[currentViewIdx], false);
+});

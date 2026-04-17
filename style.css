@@ -17,17 +17,15 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
-html { overscroll-behavior: none; }
+html { overscroll-behavior: none; height: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-m);
-  min-height: 100vh;
+  height: 100%;
   max-width: 480px;
   margin: 0 auto;
-  padding-top: calc(61px + env(safe-area-inset-top));
-  padding-bottom: max(60px, env(safe-area-inset-bottom));
-  overflow-x: hidden;
+  overflow: hidden;
   overscroll-behavior: none;
   scrollbar-width: none;
 }
@@ -71,12 +69,72 @@ nav button {
 }
 nav button.active { color: var(--accent); font-weight: 500; }
 
-/* ── VIEWS ── */
-.view { display: none; padding: 14px 14px 20px; }
-.view.active { display: block; }
-#view-workout { clear: both; }
+/* ── VIEWS CONTAINER (carril horizontal) ── */
+#views-container {
+  position: fixed;
+  /* Alineado con el cuerpo centrado de máx 480px */
+  top: calc(61px + env(safe-area-inset-top));
+  bottom: 0;
+  left: max(0px, calc(50vw - 240px));
+  right: max(0px, calc(50vw - 240px));
+  overflow: hidden;
+  z-index: 1;
+}
 
-/* ── RINGS ── */
+#views-track {
+  display: flex;
+  height: 100%;
+  will-change: transform;
+  transform: translateX(0);
+  /* La transición se controla desde JS */
+}
+
+/* Cada vista ocupa exactamente el ancho del contenedor */
+.view {
+  flex: 0 0 100%;
+  min-width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding: 14px 14px calc(max(70px, env(safe-area-inset-bottom)) + 6px);
+  box-sizing: border-box;
+}
+.view::-webkit-scrollbar { display: none; }
+/* .active solo se usa para marcar visualmente, sin display none/block */
+.view.active { }
+
+/* ── INDICADOR DE PÁGINA (page dots) ── */
+.page-dots {
+  position: fixed;
+  bottom: calc(max(60px, env(safe-area-inset-bottom)) + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+  z-index: 200;
+  pointer-events: none;
+}
+.page-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.3s, background 0.3s, width 0.3s;
+  opacity: 0.5;
+}
+.page-dot.active-dot {
+  background: var(--accent);
+  width: 16px;
+  border-radius: 3px;
+  opacity: 1;
+}
+
+/* view-more tiene padding inline que pisa el bottom — forzar */
+#view-more {
+  padding-bottom: calc(max(70px, env(safe-area-inset-bottom)) + 6px) !important;
+}
+
 .today-top { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
 .ring-wrap { position: relative; width: 90px; height: 90px; flex-shrink: 0; }
 .ring-svg { transform: rotate(-90deg); filter: drop-shadow(0px 3px 6px rgba(0,0,0,0.4)); background: var(--bg); border-radius: 50%; }
