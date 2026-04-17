@@ -169,7 +169,12 @@ function updateTodayView() {
   if (!entries.length) {
     list.innerHTML = '<div class="empty"><div class="empty-icon">🍽️</div>Sin registros hoy</div>';
   } else {
-    list.innerHTML = entries.slice().reverse().map(logHTML).join('');
+    // Pasar el índice real en allEntries para editar/borrar
+    list.innerHTML = entries.slice().reverse().map(e => {
+      const realIdx = allEntries.indexOf(e);
+      return logHTML(e, realIdx);
+    }).join('');
+    initSwipeItems();
   }
 
   renderMiniCal();
@@ -211,19 +216,69 @@ function updateStreak() {
   }
 }
 
-function logHTML(e) {
+function logHTML(e, idx) {
   const cls = 'dot-' + (e.categoria || 'otro').toLowerCase().replace(/\s+/g, '-');
-  return `<div class="log-item">
-    <div class="log-dot ${cls}"></div>
-    <div class="log-info">
-      <div class="log-name">${e.alimento || '—'}</div>
-      <div class="log-cat">${e.categoria || ''}</div>
+  const idAttr = idx !== undefined ? `data-entry-idx="${idx}"` : '';
+  return `<div class="log-item-wrap" ${idAttr}>
+    <div class="log-actions">
+      <button class="log-action-btn log-edit-btn" onclick="editEntry(this)" aria-label="Editar">✏️</button>
+      <button class="log-action-btn log-del-btn" onclick="deleteEntry(this)" aria-label="Eliminar">🗑️</button>
     </div>
-    <div class="log-nums">
-      <div class="log-k">${Math.round(e.kcal || 0)} kcal</div>
-      <div class="log-p">${parseFloat(e.proteina || 0).toFixed(1)}g prot</div>
+    <div class="log-item">
+      <div class="log-dot ${cls}"></div>
+      <div class="log-info">
+        <div class="log-name">${e.alimento || '—'}</div>
+        <div class="log-cat">${e.categoria || ''}</div>
+      </div>
+      <div class="log-nums">
+        <div class="log-k">${Math.round(e.kcal || 0)} kcal</div>
+        <div class="log-p">${parseFloat(e.proteina || 0).toFixed(1)}g prot</div>
+      </div>
     </div>
   </div>`;
+}
+
+function editEntry(btn) {
+  const wrap = btn.closest('.log-item-wrap');
+  const idx = parseInt(wrap.dataset.entryIdx);
+  if (isNaN(idx)) return;
+  const entry = allEntries[idx];
+  if (!entry) return;
+  // Rellenar el formulario con los datos de la entrada
+  document.getElementById('form-date').value = entry.fecha;
+  document.getElementById('form-food').value = entry.alimento || '';
+  document.getElementById('form-kcal').value = entry.kcal || '';
+  document.getElementById('form-prot').value = entry.proteina || '';
+  // Seleccionar categoría
+  document.querySelectorAll('.cat-btn').forEach(b => {
+    b.classList.toggle('sel', b.dataset.cat === entry.categoria);
+    if (b.dataset.cat === entry.categoria) selectedCat = entry.categoria;
+  });
+  // Eliminar la entrada para que al guardar sea nueva
+  allEntries.splice(idx, 1);
+  updateTodayView();
+  updateHistoryView();
+  showView('add');
+  showToast('✏️ Editando — guarda para actualizar', 'ok');
+  resetSwipeItems();
+}
+
+function deleteEntry(btn) {
+  const wrap = btn.closest('.log-item-wrap');
+  const idx = parseInt(wrap.dataset.entryIdx);
+  if (isNaN(idx)) return;
+  const entry = allEntries[idx];
+  if (!entry) return;
+  allEntries.splice(idx, 1);
+  updateTodayView();
+  updateHistoryView();
+  // Enviar acción de borrado al servidor (best-effort)
+  const dateStr = entry.fecha;
+  const food = entry.alimento;
+  const p = new URLSearchParams({ action: 'delete_entry', id_usuario: currentUser, fecha: dateStr, alimento: food });
+  fetch(API + '?' + p, { method: 'GET', mode: 'no-cors' }).catch(() => {});
+  showToast('🗑️ Entrada eliminada', 'ok');
+  resetSwipeItems();
 }
 
 // ── MINI CAL (Home) ───────────────────────
@@ -395,25 +450,39 @@ let scanner = null;
 function startScanner() {
   document.getElementById('scanner-container').style.display = 'block';
   scanner = new Html5Qrcode("scanner-view");
+  // Configuración optimizada: zona grande, alta tasa de fotogramas, formatos de código de barras
   const config = {
-    fps: 10,
-    qrbox: { width: 280, height: 140 },
+    fps: 15,
+    qrbox: (viewfinderWidth, viewfinderHeight) => {
+      // Usar el 90% del ancho disponible para máxima detectabilidad
+      const w = Math.round(viewfinderWidth * 0.9);
+      const h = Math.round(viewfinderHeight * 0.45);
+      return { width: w, height: h };
+    },
+    aspectRatio: 1.5,
     formatsToSupport: [
       Html5QrcodeSupportedFormats.EAN_13,
       Html5QrcodeSupportedFormats.EAN_8,
       Html5QrcodeSupportedFormats.UPC_A,
       Html5QrcodeSupportedFormats.UPC_E,
       Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.ITF,
       Html5QrcodeSupportedFormats.QR_CODE
-    ]
+    ],
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true }
   };
 
-  scanner.start({ facingMode: "environment" }, config, 
+  scanner.start(
+    { facingMode: "environment" },
+    config,
     decodedText => {
+      // Vibración de feedback táctil al detectar
+      if (navigator.vibrate) navigator.vibrate(50);
       stopScanner();
       fetchOpenFoodFacts(decodedText);
     },
-    err => { /* ignore invisible frame errors */ }
+    err => { /* ignorar errores de frame */ }
   ).catch(err => {
     showToast('Error al iniciar cámara', 'err');
     stopScanner();
@@ -426,7 +495,7 @@ function stopScanner() {
         scanner.clear();
         scanner = null;
      }).catch(() => {
-        scanner.clear();
+        try { scanner.clear(); } catch(e) {}
         scanner = null;
      });
   }
@@ -434,20 +503,23 @@ function stopScanner() {
 }
 
 function fetchOpenFoodFacts(barcode) {
-  showToast('🔍 Código: ' + barcode, 'ok');
-  fetch(`https://es.openfoodfacts.org/api/v0/product/${barcode}.json`)
+  showToast('🔍 Buscando producto...', 'ok');
+  fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`)
     .then(r => r.json())
     .then(data => {
        if (data.status === 1) {
           const p = data.product;
-          document.getElementById('form-food').value = p.product_name_es || p.product_name || 'Desconocido';
-          document.getElementById('form-kcal').value = Math.round(p.nutriments?.['energy-kcal_100g'] || 0);
-          document.getElementById('form-prot').value = parseFloat(p.nutriments?.proteins_100g || 0).toFixed(1);
-          showToast('¡Encontrado! Valores x 100g', 'ok');
+          const name = p.product_name_es || p.product_name || 'Desconocido';
+          const kcal = Math.round(p.nutriments?.['energy-kcal_100g'] || p.nutriments?.['energy-kcal'] || 0);
+          const prot = parseFloat(p.nutriments?.proteins_100g || p.nutriments?.proteins || 0).toFixed(1);
+          document.getElementById('form-food').value = name;
+          document.getElementById('form-kcal').value = kcal;
+          document.getElementById('form-prot').value = prot;
+          showToast('✅ ' + name.substring(0, 25) + ' — x100g', 'ok');
        } else {
-          showToast('Producto no registrado', 'err');
+          showToast('Producto no encontrado en base de datos', 'err');
        }
-    }).catch(e => showToast('Error red escáner', 'err'));
+    }).catch(e => showToast('Error de red al buscar producto', 'err'));
 }
 
 function selectCat(btn) {
@@ -631,24 +703,29 @@ async function toggleDay(day, isMini = false) {
   if (adding) trainedDays[mk].push(day);
   else trainedDays[mk].splice(idx, 1);
 
+  // Feedback táctil inmediato
+  if (navigator.vibrate) navigator.vibrate(adding ? [30] : [15, 15, 15]);
+
+  // Actualización visual INMEDIATA (sin esperar nada)
   localStorage.setItem('macro_training', JSON.stringify(trainedDays));
   renderWorkoutCal();
   renderMiniCal();
+  updateStreak();
 
-  clearTimeout(saveTimer);
+  // Guardar en servidor en background (sin bloquear UI)
   const ind_id = isMini ? 'mini-save-ind' : 'save-ind';
   const ind = document.getElementById(ind_id) || document.getElementById('save-ind');
-  ind.textContent = 'Guardando...';
-  
+  if (ind) ind.textContent = '⟳ Sinc...';
+
+  clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
     const fecha = `${y}-${pad(m + 1)}-${pad(day)}`;
     const action = adding ? 'add_entreno' : 'remove_entreno';
     try {
       await fetch(API + '?' + new URLSearchParams({ action, id_usuario: currentUser, fecha, tipo: 'entreno' }), { method: 'GET', mode: 'no-cors' });
-      ind.textContent = '✓ Guardado';
-      setTimeout(() => ind.textContent = '', 2000);
-    } catch (e) { ind.textContent = 'Error al guardar'; }
-  }, 800);
+      if (ind) { ind.textContent = '✓ Sincronizado'; setTimeout(() => { if(ind) ind.textContent = ''; }, 1500); }
+    } catch (e) { if (ind) ind.textContent = 'Sin conexión – guardado local'; }
+  }, 500);
 }
 
 // ── CONFIG PANEL ──────────────────────────
@@ -670,7 +747,10 @@ function calcTDEE() {
    
    document.getElementById('cfg-kcal').value = finalKcal;
    document.getElementById('cfg-prot').value = finalProt;
-   showToast('¡Objetivos auto-ajustados!', 'ok');
+   // Feedback visual inmediato en el botón
+   const calcBtn = document.querySelector('#sub-tdee .btn-main');
+   btnFeedback(calcBtn, '✓ Calculado!');
+   showToast('¡Objetivos auto-ajustados! Guarda en Objetivos.', 'ok');
 }
 
 function openSubMenu(id) {
@@ -710,7 +790,7 @@ function onColorChange() {
   applyTheme(settings);
 }
 
-async function saveSettings() {
+async function saveSettings(callerBtn) {
   settings.goalKcal = parseFloat(document.getElementById('cfg-kcal').value) || 2000;
   settings.goalProt = parseFloat(document.getElementById('cfg-prot').value) || 150;
   settings.bgColor = document.getElementById('cfg-bg').value;
@@ -721,14 +801,36 @@ async function saveSettings() {
   applyTheme(settings);
   localStorage.setItem('macro_settings', JSON.stringify(settings));
   updateTodayView();
-  closeConfig(); // Minimizar inmediatamente
 
-  // Save to Sheets
+  // Feedback visual inmediato — sin cerrar el submenú
+  if (callerBtn) btnFeedback(callerBtn, '✓ Guardado');
+  else {
+    // Buscar el botón activo más cercano
+    const activeBtn = document.querySelector('.sub-menu[style*="block"] .btn-main');
+    if (activeBtn) btnFeedback(activeBtn, '✓ Guardado');
+  }
+
+  // Save to Sheets en background
   const p = new URLSearchParams({ action: 'save_settings', id_usuario: currentUser, tipo: 'ajuste', valor: JSON.stringify(settings) });
   try {
     await fetch(API + '?' + p, { method: 'GET', mode: 'no-cors' });
     showToast('✓ Ajustes guardados', 'ok');
   } catch (e) { showToast('Guardado solo local', 'ok'); }
+}
+
+// Feedback visual instantáneo en cualquier botón
+function btnFeedback(btn, label = '✓ Hecho', durationMs = 1500) {
+  if (!btn) return;
+  const orig = btn.textContent;
+  const origBg = btn.style.background;
+  btn.textContent = label;
+  btn.style.background = '#4caf50';
+  btn.disabled = true;
+  setTimeout(() => {
+    btn.textContent = orig;
+    btn.style.background = origBg;
+    btn.disabled = false;
+  }, durationMs);
 }
 
 // ── NAV ───────────────────────────────────
@@ -888,19 +990,119 @@ if (localStorage.getItem('macro_auth') === '1' && savedUser) {
   init();
 }
 
-// ── GESTURES (SWIPE BACK) ─────────────────
-let tStartX = 0, tStartY = 0;
+// ── SWIPE LOG ITEMS ───────────────────────
+const SWIPE_THRESHOLD = 60;
+let activeSwipeItem = null;
+
+function initSwipeItems() {
+  document.querySelectorAll('.log-item').forEach(item => {
+    let startX = 0, startY = 0, isDragging = false;
+    
+    item.addEventListener('touchstart', e => {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      isDragging = false;
+    }, { passive: true });
+    
+    item.addEventListener('touchmove', e => {
+      const dx = e.touches[0].clientX - startX;
+      const dy = Math.abs(e.touches[0].clientY - startY);
+      if (Math.abs(dx) > 10 && dy < 30) {
+        isDragging = true;
+        // Solo deslizamiento hacia la izquierda
+        if (dx < 0) {
+          const clamp = Math.max(dx, -130);
+          item.style.transform = `translateX(${clamp}px)`;
+          item.style.transition = 'none';
+        } else if (activeSwipeItem === item) {
+          // Restaurar al deslizar derecha
+          item.style.transform = 'translateX(0)';
+        }
+      }
+    }, { passive: true });
+    
+    item.addEventListener('touchend', e => {
+      if (!isDragging) return;
+      const dx = e.changedTouches[0].clientX - startX;
+      item.style.transition = 'transform 0.25s ease';
+      if (dx < -SWIPE_THRESHOLD) {
+        // Abrir acciones
+        if (activeSwipeItem && activeSwipeItem !== item) {
+          activeSwipeItem.style.transform = 'translateX(0)';
+        }
+        item.style.transform = 'translateX(-130px)';
+        activeSwipeItem = item;
+      } else {
+        // Cerrar
+        item.style.transform = 'translateX(0)';
+        if (activeSwipeItem === item) activeSwipeItem = null;
+      }
+    }, { passive: true });
+  });
+}
+
+function resetSwipeItems() {
+  document.querySelectorAll('.log-item').forEach(item => {
+    item.style.transition = 'transform 0.25s ease';
+    item.style.transform = 'translateX(0)';
+  });
+  activeSwipeItem = null;
+}
+
+// Cerrar swipe al tocar fuera
+document.addEventListener('touchstart', e => {
+  if (activeSwipeItem && !e.target.closest('.log-item-wrap')) {
+    activeSwipeItem.style.transition = 'transform 0.25s ease';
+    activeSwipeItem.style.transform = 'translateX(0)';
+    activeSwipeItem = null;
+  }
+}, { passive: true });
+
+// ── GESTURES (SWIPE BETWEEN PAGES + BACK) ─
+const VIEWS = ['today', 'add', 'tracking', 'ranking', 'more'];
+let tStartX = 0, tStartY = 0, tStartTime = 0;
+
 document.addEventListener('touchstart', e => {
   tStartX = e.changedTouches[0].screenX;
   tStartY = e.changedTouches[0].screenY;
-}, {passive:true});
+  tStartTime = Date.now();
+}, { passive: true });
 
 document.addEventListener('touchend', e => {
   const diffX = e.changedTouches[0].screenX - tStartX;
   const diffY = Math.abs(e.changedTouches[0].screenY - tStartY);
-  // Si swipe de Izquierda a Derecha partiendo del margen
-  if (tStartX < 40 && diffX > 60 && diffY < 50) {
+  const elapsed = Date.now() - tStartTime;
+
+  // Ignorar gestos verticales o muy lentos
+  if (diffY > Math.abs(diffX) * 0.7 || elapsed > 500) return;
+  // Requerir velocidad mínima y distancia mínima
+  if (Math.abs(diffX) < 60) return;
+  
+  // Prioridad 1: Swipe RIGHT (izquierda→derecha) → volver atrás en submenú
+  if (diffX > 0) {
     const activado = Array.from(document.querySelectorAll('.sub-menu')).find(m => m.style.display === 'block');
-    if (activado) closeSubMenu();
+    if (activado) { closeSubMenu(); return; }
   }
-}, {passive:true});
+
+  // Prioridad 2: Navegación entre vistas (solo si NO hay swipe de log activo)
+  if (activeSwipeItem) return;
+  
+  // Ignorar si el swipe es sobre un log-item (para no interferir con swipe de acciones)
+  if (e.target.closest('.log-item-wrap')) return;
+  // Ignorar si se está dentro de grids de calendario (para no interferir con clicks de días)
+  if (e.target.closest('.mini-cal-grid, .wk-cal-grid')) return;
+
+  const currentView = Array.from(document.querySelectorAll('.view')).find(v => v.classList.contains('active'));
+  if (!currentView) return;
+  const currentId = currentView.id.replace('view-', '');
+  const currentIdx = VIEWS.indexOf(currentId);
+  if (currentIdx === -1) return;
+
+  if (diffX < -60 && currentIdx < VIEWS.length - 1) {
+    // Swipe izquierda → siguiente página
+    showView(VIEWS[currentIdx + 1]);
+  } else if (diffX > 60 && currentIdx > 0) {
+    // Swipe derecha → página anterior
+    showView(VIEWS[currentIdx - 1]);
+  }
+}, { passive: true });
